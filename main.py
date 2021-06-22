@@ -20,6 +20,7 @@ import math
 from scipy.stats import wilcoxon
 from scipy.stats import friedmanchisquare
 import networkx
+import sys
 
 # inspired from orange3 https://docs.orange.biolab.si/3/data-mining-library/reference/evaluation.cd.html
 def graph_ranks(avranks, names, p_values, cd=None, cdmethod=None, lowv=None, highv=None,
@@ -275,12 +276,12 @@ def form_cliques(p_values, nnames):
     return networkx.find_cliques(g)
 
 
-def draw_cd_diagram(df_perf=None, alpha=0.05, title=None, labels=False):
+def draw_cd_diagram(df_perf=None, alpha=0.05, title=None, labels=False, colname="accuracy"):
     """
     Draws the critical difference diagram given the list of pairwise classifiers that are
     significant or not
     """
-    p_values, average_ranks, _ = wilcoxon_holm(df_perf=df_perf, alpha=alpha)
+    p_values, average_ranks, _ = wilcoxon_holm(df_perf=df_perf, alpha=alpha, colname=colname)
 
     print(average_ranks)
 
@@ -300,12 +301,13 @@ def draw_cd_diagram(df_perf=None, alpha=0.05, title=None, labels=False):
         plt.title(title,fontdict=font, y=0.9, x=0.5)
     plt.savefig('cd-diagram.png',bbox_inches='tight')
 
-def wilcoxon_holm(alpha=0.05, df_perf=None):
+def wilcoxon_holm(alpha=0.05, df_perf=None, colname=None):
     """
     Applies the wilcoxon signed rank test between each pair of algorithm and then use Holm
     to reject the null's hypothesis
     """
     print(pd.unique(df_perf['classifier_name']))
+    print(colname)
     # count the number of tested datasets per classifier
     df_counts = pd.DataFrame({'count': df_perf.groupby(
         ['classifier_name']).size()}).reset_index()
@@ -316,7 +318,7 @@ def wilcoxon_holm(alpha=0.05, df_perf=None):
                        ['classifier_name'])
     # test the null hypothesis using friedman before doing a post-hoc analysis
     friedman_p_value = friedmanchisquare(*(
-        np.array(df_perf.loc[df_perf['classifier_name'] == c]['accuracy'])
+        np.array(df_perf.loc[df_perf['classifier_name'] == c][colname])
         for c in classifiers))[1]
     if friedman_p_value >= alpha:
         # then the null hypothesis over the entire classifiers cannot be rejected
@@ -331,14 +333,14 @@ def wilcoxon_holm(alpha=0.05, df_perf=None):
         # get the name of classifier one
         classifier_1 = classifiers[i]
         # get the performance of classifier one
-        perf_1 = np.array(df_perf.loc[df_perf['classifier_name'] == classifier_1]['accuracy']
+        perf_1 = np.array(df_perf.loc[df_perf['classifier_name'] == classifier_1][colname]
                           , dtype=np.float64)
         for j in range(i + 1, m):
             # get the name of the second classifier
             classifier_2 = classifiers[j]
             # get the performance of classifier one
             perf_2 = np.array(df_perf.loc[df_perf['classifier_name'] == classifier_2]
-                              ['accuracy'], dtype=np.float64)
+                              [colname], dtype=np.float64)
             # calculate the p_value
             p_value = wilcoxon(perf_1, perf_2, zero_method='pratt')[1]
             # appen to the list
@@ -363,7 +365,7 @@ def wilcoxon_holm(alpha=0.05, df_perf=None):
     sorted_df_perf = df_perf.loc[df_perf['classifier_name'].isin(classifiers)]. \
         sort_values(['classifier_name', 'dataset_name'])
     # get the rank data
-    rank_data = np.array(sorted_df_perf['accuracy']).reshape(m, max_nb_datasets)
+    rank_data = np.array(sorted_df_perf[colname]).reshape(m, max_nb_datasets)
 
     # create the data frame containg the accuracies
     df_ranks = pd.DataFrame(data=rank_data, index=np.sort(classifiers), columns=
@@ -378,6 +380,15 @@ def wilcoxon_holm(alpha=0.05, df_perf=None):
     # return the p-values and the average ranks
     return p_values, average_ranks, max_nb_datasets
 
-df_perf = pd.read_csv('DefaultvsTunedvsEnsembleCritDiffAcc.csv',index_col=False)
 
-draw_cd_diagram(df_perf=df_perf, title='Accuracy', labels=True)
+if __name__ == "__main__":
+    try:
+        df = sys.argv[1]
+    except:
+        df = "example.csv"
+    try:
+        colname = sys.argv[2]
+    except:
+        colname = "accuracy"
+    df_perf = pd.read_csv(df,index_col=False)
+    draw_cd_diagram(df_perf=df_perf, labels=True, colname=colname)
